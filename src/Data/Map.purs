@@ -39,14 +39,18 @@ module Data.Map
   ) where
 
 import Prelude
+
 import Data.Eq (class Eq1)
 import Data.Foldable (foldl, foldMap, foldr, class Foldable)
+import Data.FoldableWithIndex (class FoldableWithIndex)
+import Data.FunctorWithIndex (class FunctorWithIndex)
 import Data.List (List(..), (:), length, nub)
 import Data.List.Lazy as LL
 import Data.Maybe (Maybe(..), maybe, isJust, fromMaybe)
 import Data.Monoid (class Monoid)
 import Data.Ord (class Ord1)
 import Data.Traversable (traverse, class Traversable)
+import Data.TraversableWithIndex (class TraversableWithIndex, itraverse)
 import Data.Tuple (Tuple(Tuple), snd, uncurry)
 import Data.Unfoldable (class Unfoldable, unfoldr)
 import Partial.Unsafe (unsafePartial)
@@ -87,27 +91,42 @@ instance functorMap :: Functor (Map k) where
   map f (Two left k v right) = Two (map f left) k (f v) (map f right)
   map f (Three left k1 v1 mid k2 v2 right) = Three (map f left) k1 (f v1) (map f mid) k2 (f v2) (map f right)
 
+instance functorWithIndexMap :: FunctorWithIndex k (Map k) where
+  imap = mapWithKey
+
 instance foldableMap :: Foldable (Map k) where
   foldl   f z m = foldl   f z (values m)
   foldr   f z m = foldr   f z (values m)
   foldMap f   m = foldMap f   (values m)
 
+-- | Internal usage -- a specialized `toUnfoldable`
+elems :: forall k v. Map k v -> List (Tuple k v)
+elems = toUnfoldable
+
+instance foldableWithKeyMap :: FoldableWithIndex k (Map k) where
+  ifoldl f z m = foldl (\y (Tuple i x) -> f i y x) z (elems m)
+  ifoldr f z m = foldr (\(Tuple i x) y -> f i x y) z (elems m)
+  ifoldMap f m = foldMap (uncurry f) (elems m)
+
 instance traversableMap :: Traversable (Map k) where
-  traverse f Leaf = pure Leaf
-  traverse f (Two left k v right) =
-    Two <$> traverse f left
-        <*> pure k
-        <*> f v
-        <*> traverse f right
-  traverse f (Three left k1 v1 mid k2 v2 right) =
-    Three <$> traverse f left
-          <*> pure k1
-          <*> f v1
-          <*> traverse f mid
-          <*> pure k2
-          <*> f v2
-          <*> traverse f right
+  traverse f = itraverse (const f)
   sequence = traverse id
+
+instance traversableWithIndexMap :: TraversableWithIndex k (Map k) where
+  itraverse f Leaf = pure Leaf
+  itraverse f (Two left k v right) =
+    Two <$> itraverse f left
+        <*> pure k
+        <*> f k v
+        <*> itraverse f right
+  itraverse f (Three left k1 v1 mid k2 v2 right) =
+    Three <$> itraverse f left
+          <*> pure k1
+          <*> f k1 v1
+          <*> itraverse f mid
+          <*> pure k2
+          <*> f k2 v2
+          <*> itraverse f right
 
 -- | Render a `Map` as a `String`
 showTree :: forall k v. Show k => Show v => Map k v -> String
